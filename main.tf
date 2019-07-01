@@ -1,9 +1,14 @@
 provider "azurerm" {
 }
 
+variable "resource-location" {
+  type        = "string"
+  default     = "australiasoutheast"
+  description = "provide a location where to provision resources"
+}
 resource "azurerm_resource_group" "test-resource-group" {
   name     = "temp-resource-group"
-  location = "australiasoutheast"
+  location = "${var.resource-location}"
 
       tags = {
         purpose = "Demo"        
@@ -49,3 +54,10 @@ resource "azurerm_network_security_group" "test-nsg" {
         purpose = "Demo"        
     }
 }
+
+output "sample-output" {
+  value       = "${azurazurerm_network_security_group.test-nsg.description}"
+  description = "bla bla"
+  sensitive   = false
+}
+
