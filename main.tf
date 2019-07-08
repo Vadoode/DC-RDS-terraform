@@ -62,25 +62,27 @@ resource "azurerm_virtual_network" "virtual-network" {
     address_space       = ["${local.AzureInfraNetwork}"]
     location            = "${var.resource-location}"
     resource_group_name =  "${azurerm_resource_group.test-resource-group.name}"
-
-    subnet {
-        name           = "ServersSubnet"
-        address_prefix = "${local.ServersSubnet}"
-        #security_group = "${azurestack_network_security_group.test.id}"
-    }
-
-    subnet {
-        name           = "GatewaySubnet"
-        address_prefix = "${local.GatewaySubnet}"
-        #security_group = "${azurestack_network_security_group.test.id}"
-    } 
 }
-# ========================
+resource "azurerm_subnet" "ServersSubnet" {
+  name                = "ServersSubnet"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+  virtual_network_name= "${azurerm_virtual_network.virtual-network.name}"
+
+  address_prefix = "${local.ServersSubnet}"
+}
+resource "azurerm_subnet" "GatewaySubnet" {
+  name                = "GatewaySubnet"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+  virtual_network_name= "${azurerm_virtual_network.virtual-network.name}"
+
+  address_prefix = "${local.GatewaySubnet}"
+}
+
 resource "azurerm_virtual_machine" "DCServer" {
   name                  = "${var.ClientShortName}-az-DC"
  location              = "${var.resource-location}"
   resource_group_name   = "${azurerm_resource_group.test-resource-group.name}"
-  # network_interface_ids = ["${azurerm_network_interface.main.id}"]
+  network_interface_ids = ["${azurerm_network_interface.DCNIC.id}"]
   vm_size               = "${local.DCVMSize}"
 
   delete_os_disk_on_termination = true
@@ -109,27 +111,135 @@ resource "azurerm_virtual_machine" "DCServer" {
     timezone = "AUS Eastern Standard Time"
     }
 }
-
 resource "azurerm_network_interface" "DCNIC" {
   name                = "dc-network-interface"
   location            = "${var.resource-location}"
   resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
 
   ip_configuration {
-    name                          = "ipconfig1"  # azurerm_virtual_network.virtual-network.subnet[0].name
-    subnet_id                     = azurerm_virtual_network.virtual-network.subnet[0].id
+    name                          = "ipconfig1" 
+    subnet_id                     = "${azurerm_subnet.ServersSubnet.id}"
     private_ip_address_allocation = "Static"
-    private_ip_address = "${local.DCIPAddr}"
-    
+    private_ip_address = "${local.DCIPAddr}" 
+    primary = true       
   }
+
+  enable_accelerated_networking = false
+  enable_ip_forwarding = false
+  dns_servers = ["127.0.0.1","8.8.8.8"]          
 }
 
- 
-  # =========================================
+resource "azurerm_availability_set" "RDSAvailabilitySet" {
+  location =   "${var.resource-location}"
+  resource_group_name   = "${azurerm_resource_group.test-resource-group.name}"
+  name = "RDSAvailabilitySet"
 
-#output "sample-output" {
-  # value       = "${azurazurerm_network_security_group.test-nsg.description}"
- # description = "bla bla"
-  #sensitive   = false
-#}
+  platform_fault_domain_count = 2
+  platform_update_domain_count = 2  
+}
+
+resource "azurerm_virtual_machine" "RDS1Server" {
+  name                  = "${var.ClientShortName}-az-rds1"
+ location              = "${var.resource-location}"
+  resource_group_name   = "${azurerm_resource_group.test-resource-group.name}"
+  network_interface_ids = ["${azurerm_network_interface.RDS1NIC.id}"]
+  vm_size               = "${local.RDSVMSize}"
+  availability_set_id = "${azurerm_availability_set.RDSAvailabilitySet.id}"
+
+  delete_os_disk_on_termination = true
+  delete_data_disks_on_termination = true
+
+  storage_image_reference {
+    publisher = "MicrosoftWindowsServer"
+    offer     = "WindowsServer"
+    sku       = "2016-Datacenter-smalldisk"
+    version   = "latest"
+  }
+  storage_os_disk {
+    name              = "rds1_osdisk_${var.ClientShortName}"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+  os_profile {
+    computer_name  = "${var.ClientShortName}-az-rds1"
+    admin_username = "${local.adminUserName}"
+    admin_password = "${local.adminPassword}"
+  }
+  os_profile_windows_config {
+    provision_vm_agent = true
+    enable_automatic_upgrades = true
+    timezone = "AUS Eastern Standard Time"    
+    }
+}
+resource "azurerm_network_interface" "RDS1NIC" {
+  name                = "rds1-network-interface"
+  location            = "${var.resource-location}"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+
+  ip_configuration {
+    name                          = "ipconfig1" 
+    subnet_id                     = "${azurerm_subnet.ServersSubnet.id}"
+    private_ip_address_allocation = "Static"
+    private_ip_address = "${local.RDS1IPAddr}" 
+    primary = true       
+  }
+  
+  enable_accelerated_networking = false
+  enable_ip_forwarding = false
+  dns_servers = ["${local.DCIPAddr}"]          
+}
+
+
+resource "azurerm_virtual_machine" "RDS2Server" {
+  name                  = "${var.ClientShortName}-az-rds2"
+ location              = "${var.resource-location}"
+  resource_group_name   = "${azurerm_resource_group.test-resource-group.name}"
+  network_interface_ids = ["${azurerm_network_interface.RDS2NIC.id}"]
+  vm_size               = "${local.RDSVMSize}"
+  availability_set_id = "${azurerm_availability_set.RDSAvailabilitySet.id}"
+
+  delete_os_disk_on_termination = true
+  delete_data_disks_on_termination = true
+
+  storage_image_reference {
+    publisher = "MicrosoftWindowsServer"
+    offer     = "WindowsServer"
+    sku       = "2016-Datacenter-smalldisk"
+    version   = "latest"
+  }
+  storage_os_disk {
+    name              = "rds2_osdisk_${var.ClientShortName}"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+  os_profile {
+    computer_name  = "${var.ClientShortName}-az-rds2"
+    admin_username = "${local.adminUserName}"
+    admin_password = "${local.adminPassword}"
+  }
+  os_profile_windows_config {
+    provision_vm_agent = true
+    enable_automatic_upgrades = true
+    timezone = "AUS Eastern Standard Time"    
+    }
+}
+resource "azurerm_network_interface" "RDS2NIC" {
+  name                = "rds2-network-interface"
+  location            = "${var.resource-location}"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+
+  ip_configuration {
+    name                          = "ipconfig1" 
+    subnet_id                     = "${azurerm_subnet.ServersSubnet.id}"
+    private_ip_address_allocation = "Static"
+    private_ip_address = "${local.RDS2IPAddr}" 
+    primary = true       
+  }
+  
+  enable_accelerated_networking = false
+  enable_ip_forwarding = false
+  dns_servers = ["${local.DCIPAddr}"]          
+}
 
