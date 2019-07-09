@@ -57,11 +57,13 @@ resource "azurerm_resource_group" "test-resource-group" {
     }
 }
 
+## Create a VNet and two subnets for it.
 resource "azurerm_virtual_network" "virtual-network" {
     name                = "${var.ClientShortName}-az-network"
     address_space       = ["${local.AzureInfraNetwork}"]
     location            = "${var.resource-location}"
     resource_group_name =  "${azurerm_resource_group.test-resource-group.name}"
+    
 }
 resource "azurerm_subnet" "ServersSubnet" {
   name                = "ServersSubnet"
@@ -77,7 +79,7 @@ resource "azurerm_subnet" "GatewaySubnet" {
 
   address_prefix = "${local.GatewaySubnet}"
 }
-
+## Create one DC server and two RDS servers.
 resource "azurerm_virtual_machine" "DCServer" {
   name                  = "${var.ClientShortName}-az-DC"
  location              = "${var.resource-location}"
@@ -243,3 +245,45 @@ resource "azurerm_network_interface" "RDS2NIC" {
   dns_servers = ["${local.DCIPAddr}"]          
 }
 
+## STS VPN 
+
+# Public IP for Virtual Network Gateway (STS Azure Side)
+resource "azurerm_public_ip" "VNG-Public-IP" {
+  name                = "${var.STSPublicIP}"
+  location            = "${var.resource-location}"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+
+  ip_version = "IPv4"
+  allocation_method   = "Dynamic"
+  sku = "Basic"
+  idle_timeout_in_minutes = 4  
+}
+
+# Virtual network gateway 
+resource "azurerm_virtual_network_gateway" "VNG" {
+  name                = "${var.clientSiteName}-STS-Azure-Side-GW"
+  location            = "${var.resource-location}"
+  resource_group_name = "${azurerm_resource_group.test-resource-group.name}"
+
+  type     = "Vpn"
+  vpn_type = "RouteBased"
+  active_active = false
+  enable_bgp    = false
+  sku           = "Basic"
+  
+  ip_configuration {
+    name                          = "vnetGatewayConfig"
+    public_ip_address_id          = "${azurerm_public_ip.VNG.it}"
+    private_ip_address_allocation = "Dynamic"
+    subnet_id                     = "${azurerm_subnet.GatewaySubnet.id}"
+  }
+
+  vpn_client_configuration {
+    address_space = ["${var.P2SSubnet}"]
+    root_certificate {
+      name = "certp2sroot"
+      public_cert_data  = "MIIC5zCCAc+gAwIBAgIQQAGCRSy+ua1P+qDjezo67TANBgkqhkiG9w0BAQsFADAWMRQwEgYDVQQDDAtQMlNSb290Q2VydDAeFw0xODEyMjUwMDQ5NTZaFw0xOTEyMjUwMTA5NTZaMBYxFDASBgNVBAMMC1AyU1Jvb3RDZXJ0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqnUld2C6ZfzSGel9+qaclRhZipboT7aQnvWUAMwgRzCV/xZC8SxCaSMyBRgynO04nkkJ8M5VIk4OYIcrR+03rYtxazDbooF25FEGkyp0WxqJtkMD0/kaSpNehAntqW3xK1fy+8Q4BuE2KhVFl80E68VIQjxo/WzMj94YKuSGfAfy5jnCkkAFiMBZa15AlxjjlUafYg7nLlgiA0VcGN8QKeLsDE4MIF+skZW7/+Msh15sTrvY9dCaJD07DQFHYTb+SoC3EoFeONiNLBYvi+9afTOuVTbrKOaNh7XtOpAXh5fVjpsnMdHyy3MIYyaeMVidAZNXOjwC4c4JFz3+e2bV9QIDAQABozEwLzAOBgNVHQ8BAf8EBAMCAgQwHQYDVR0OBBYEFCROvLjTh8HYBoBKZE4BQltf4TXOMA0GCSqGSIb3DQEBCwUAA4IBAQCk/7VIQFjFOIqy52/TRGr7WjWAdQmCOnjjNaQN1KiIQp5qoO1Qo7kCpMIX0mzkg2wGEruYc6WOEtMiBHoaB3h5x4kMx9jj8JgAwTI4RPCGIwZv2JP2C4g2Ahd6iKOeZzKvpcNRqeBrTwiCiIu3j64qrna4Kzf87fxV1yjJAUT9igx9UXVfRCjkHLRn3qgEjsOXr/aTukjvrolRPBmNOgVjgkOsuDJJVq1NTbO9YhSq4VIO4PnWyoUz8L6zWXfIVRIjy/O1LC49L09yzk0wk+G6oulwjUwZFmHnkik7nV9vCOkn2dDkmxMw8vJ6PkvJQvRWjYP60nC0g1OsoVcIMovP"
+
+    }
+  }
+}
